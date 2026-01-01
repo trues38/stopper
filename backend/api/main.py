@@ -72,24 +72,23 @@ async def search_foods(
     offset: int = Query(0)
 ):
     """음식 검색"""
-    # 정렬 옵션
+    # 정렬 옵션 (ILIKE 검색용)
     order_by = {
-        "relevance": "ts_rank(to_tsvector('simple', name), to_tsquery('simple', $1)) DESC",
+        "relevance": "name ASC",
         "calories_asc": "calories ASC",
         "calories_desc": "calories DESC",
         "protein_desc": "protein DESC",
         "protein_asc": "protein ASC",
         "sugar_asc": "sugar ASC",
         "sugar_desc": "sugar DESC"
-    }.get(sort, "ts_rank(to_tsvector('simple', name), to_tsquery('simple', $1)) DESC")
+    }.get(sort, "name ASC")
 
-    # 검색 쿼리 생성 (공백을 &로 연결)
-    search_terms = q.strip().split()
-    tsquery = " & ".join(search_terms)
+    # ILIKE 검색 (한글에 적합)
+    search_pattern = f"%{q.strip()}%"
 
     # WHERE 조건
-    where_clause = "to_tsvector('simple', name) @@ to_tsquery('simple', $1)"
-    params = [tsquery]
+    where_clause = "name ILIKE $1"
+    params = [search_pattern]
 
     if category:
         where_clause += " AND category_large = $2"
