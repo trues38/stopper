@@ -2,8 +2,8 @@
  * API 클라이언트 - STOPPER
  */
 
-// VPS API (CORS enabled)
-const API_BASE = import.meta.env.VITE_API_URL || 'http://141.164.35.214:8003';
+// Use Vercel proxy in production, direct in dev
+const API_BASE = import.meta.env.DEV ? 'http://localhost:8003' : '';
 
 /**
  * 식품 검색
