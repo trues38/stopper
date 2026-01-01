@@ -1114,7 +1114,8 @@ async def quick_register_barcode(barcode: str, product: ConvenienceProduct):
     """
     편의점 제품 원클릭 등록
 
-    - 편의점 DB의 영양정보를 그대로 STOPPER DB에 저장
+    - 편의점 DB의 제품 정보를 STOPPER DB에 저장
+    - 영양정보는 선택 (없으면 0으로 저장, 나중에 수동 입력 가능)
     - 사용자는 타이핑/입력 없이 확인만 누르면 됨
     """
     # 기존 제품 확인
@@ -1122,6 +1123,15 @@ async def quick_register_barcode(barcode: str, product: ConvenienceProduct):
 
     if existing:
         raise HTTPException(400, "이미 등록된 바코드입니다")
+
+    # 영양정보 기본값 처리 (None → 0)
+    calories = product.calories or 0
+    protein = product.protein or 0
+    fat = product.fat or 0
+    carbohydrate = product.carbohydrate or 0
+    sugar = product.sugar or 0
+    sodium = product.sodium or 0
+    saturated_fat = product.saturated_fat or 0
 
     # 새로 삽입
     food_id = await fetch_val("""
@@ -1131,14 +1141,13 @@ async def quick_register_barcode(barcode: str, product: ConvenienceProduct):
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING id
     """, product.name, product.manufacturer, product.serving_size, barcode,
-        product.calories, product.protein, product.fat, product.carbohydrate,
-        product.sugar, product.sodium, product.saturated_fat)
+        calories, protein, fat, carbohydrate, sugar, sodium, saturated_fat)
 
     return ProductRegisterResponse(
         id=food_id,
         barcode=barcode,
         name=product.name,
-        message="편의점 제품이 등록되었습니다"
+        message="편의점 제품이 등록되었습니다 (영양정보는 나중에 추가 가능)"
     )
 
 

@@ -118,7 +118,11 @@ export default function ProductConfirm() {
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="bg-orange-500 text-white px-4 py-3">
             <h2 className="font-bold text-lg">등록할 제품 정보</h2>
-            <p className="text-xs text-orange-100">영양정보가 자동으로 입력됩니다</p>
+            <p className="text-xs text-orange-100">
+              {product.calories || product.protein
+                ? '영양정보가 자동으로 입력됩니다'
+                : '제품명과 가격 정보가 자동 입력됩니다 (데모)'}
+            </p>
           </div>
 
           <div className="p-4 space-y-4">
@@ -152,46 +156,68 @@ export default function ProductConfirm() {
               </div>
             )}
 
-            {/* 영양정보 */}
-            <div className="border-t pt-4">
-              <p className="text-sm font-bold text-gray-800 mb-3">영양정보</p>
+            {/* 영양정보 (있는 경우만 표시) */}
+            {(product.calories || product.protein) && (
+              <div className="border-t pt-4">
+                <p className="text-sm font-bold text-gray-800 mb-3">영양정보</p>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs text-gray-500 mb-1">칼로리</p>
-                  <p className="text-lg font-bold text-gray-900">{product.calories} <span className="text-sm text-gray-500">kcal</span></p>
+                <div className="grid grid-cols-2 gap-3">
+                  {product.calories && (
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">칼로리</p>
+                      <p className="text-lg font-bold text-gray-900">{product.calories} <span className="text-sm text-gray-500">kcal</span></p>
+                    </div>
+                  )}
+
+                  {product.protein && (
+                    <div className="bg-blue-50 rounded-lg p-3">
+                      <p className="text-xs text-blue-600 mb-1">단백질</p>
+                      <p className="text-lg font-bold text-blue-600">{product.protein} <span className="text-sm text-blue-400">g</span></p>
+                    </div>
+                  )}
+
+                  {product.sugar && (
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">당류</p>
+                      <p className="text-base font-bold text-gray-900">{product.sugar} <span className="text-sm text-gray-500">g</span></p>
+                    </div>
+                  )}
+
+                  {product.sodium && (
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">나트륨</p>
+                      <p className="text-base font-bold text-gray-900">{product.sodium} <span className="text-sm text-gray-500">mg</span></p>
+                    </div>
+                  )}
+
+                  {product.fat > 0 && (
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">지방</p>
+                      <p className="text-base font-bold text-gray-900">{product.fat} <span className="text-sm text-gray-500">g</span></p>
+                    </div>
+                  )}
+
+                  {product.carbohydrate > 0 && (
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">탄수화물</p>
+                      <p className="text-base font-bold text-gray-900">{product.carbohydrate} <span className="text-sm text-gray-500">g</span></p>
+                    </div>
+                  )}
                 </div>
-
-                <div className="bg-blue-50 rounded-lg p-3">
-                  <p className="text-xs text-blue-600 mb-1">단백질</p>
-                  <p className="text-lg font-bold text-blue-600">{product.protein} <span className="text-sm text-blue-400">g</span></p>
-                </div>
-
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs text-gray-500 mb-1">당류</p>
-                  <p className="text-base font-bold text-gray-900">{product.sugar} <span className="text-sm text-gray-500">g</span></p>
-                </div>
-
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs text-gray-500 mb-1">나트륨</p>
-                  <p className="text-base font-bold text-gray-900">{product.sodium} <span className="text-sm text-gray-500">mg</span></p>
-                </div>
-
-                {product.fat > 0 && (
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs text-gray-500 mb-1">지방</p>
-                    <p className="text-base font-bold text-gray-900">{product.fat} <span className="text-sm text-gray-500">g</span></p>
-                  </div>
-                )}
-
-                {product.carbohydrate > 0 && (
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs text-gray-500 mb-1">탄수화물</p>
-                    <p className="text-base font-bold text-gray-900">{product.carbohydrate} <span className="text-sm text-gray-500">g</span></p>
-                  </div>
-                )}
               </div>
-            </div>
+            )}
+
+            {/* 영양정보 없는 경우 안내 */}
+            {!product.calories && !product.protein && (
+              <div className="border-t pt-4">
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <p className="text-sm text-yellow-800">
+                    ⚠️ 영양정보 없음<br/>
+                    <span className="text-xs text-yellow-700">등록 후 수동으로 영양정보를 추가할 수 있습니다.</span>
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -199,7 +225,11 @@ export default function ProductConfirm() {
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
           <p className="text-sm text-blue-800">
             ✨ 위 정보로 제품을 등록합니다.<br/>
-            등록 후에는 바코드 스캔만으로 STOPPER 분석을 받을 수 있습니다.
+            {product.calories || product.protein ? (
+              <span>등록 후에는 바코드 스캔만으로 STOPPER 분석을 받을 수 있습니다.</span>
+            ) : (
+              <span>영양정보는 나중에 추가하거나 수동 입력 화면에서 등록할 수 있습니다.</span>
+            )}
           </p>
         </div>
 

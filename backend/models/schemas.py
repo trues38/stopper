@@ -192,18 +192,18 @@ class ProductRegisterResponse(BaseModel):
 
 
 class ConvenienceProduct(BaseModel):
-    """편의점 제품 정보"""
+    """편의점 제품 정보 (데모: 영양정보 선택)"""
     name: str
     price: Optional[str] = None
     manufacturer: Optional[str] = None
     serving_size: Optional[str] = None
-    calories: float
-    protein: float
-    fat: float = 0
-    carbohydrate: float = 0
-    sugar: float = 0
-    sodium: float = 0
-    saturated_fat: float = 0
+    calories: Optional[float] = None
+    protein: Optional[float] = None
+    fat: Optional[float] = None
+    carbohydrate: Optional[float] = None
+    sugar: Optional[float] = None
+    sodium: Optional[float] = None
+    saturated_fat: Optional[float] = None
 
 
 class BarcodeMatchResponse(BaseModel):
