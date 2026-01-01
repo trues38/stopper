@@ -58,14 +58,14 @@ def normalize_product_name(name: str) -> str:
     """
     제품명 정규화 (매칭용)
 
-    - 괄호 제거: 삼립)메가불고기 → 삼립 메가불고기
+    - 괄호를 공백으로 변환: 삼립)메가불고기 → 삼립 메가불고기
     - 소문자 변환
     - 공백 정리
     """
     import re
 
-    # 괄호 제거
-    normalized = re.sub(r'[\(\)\[\]）]', '', name)
+    # 괄호를 공백으로 변환 (키워드 분리를 위해)
+    normalized = re.sub(r'[\(\)\[\]）]', ' ', name)
 
     # 소문자 변환
     normalized = normalized.lower().strip()
@@ -131,8 +131,10 @@ def match_convenience_product(i2570_name: str, manufacturer: str = None) -> Opti
         common_keywords = i2570_keywords & cvs_keywords
         match_score = len(common_keywords)
 
-        # 최소 2개 이상 키워드 일치
-        if match_score >= 2 and match_score > max_match_score:
+        # 최소 1개 이상 키워드 일치 (3글자 이상 키워드만)
+        # "딸기샌드위치" 같은 고유명사는 1개만 일치해도 충분
+        long_keywords = [k for k in common_keywords if len(k) >= 3]
+        if long_keywords and match_score > max_match_score:
             max_match_score = match_score
             best_match = product
 
