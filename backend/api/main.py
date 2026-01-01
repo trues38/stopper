@@ -13,6 +13,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from db.database import init_db, close_db, fetch_all, fetch_one, fetch_val, execute
+from db.category_serving_rules import get_serving_rule
+from db.meal_type_rules import get_meal_type, effective_protein
+from db.stopper_messages import (
+    get_protein_verdict,
+    get_calorie_verdict,
+    get_sugar_verdict,
+    get_overall_verdict
+)
+from api.openfoodfacts import (
+    fetch_product_by_barcode,
+    match_product_name
+)
 from models.schemas import (
     FoodResponse, FoodSearchResponse,
     UserSettings, RecordCreate, RecordResponse, TodayResponse, DailyTotals,
@@ -100,7 +112,7 @@ async def search_foods(
 
     # 검색 실행
     search_query = f"""
-        SELECT id, food_code, name, manufacturer, category_large, category_medium,
+        SELECT id, food_code, name, manufacturer, category_large, category_medium, category_small,
                calories, protein, fat, carbohydrate, sugar, sodium, saturated_fat, serving_size
         FROM foods
         WHERE {where_clause}
@@ -118,6 +130,7 @@ async def search_foods(
             manufacturer=r["manufacturer"],
             category_large=r["category_large"],
             category_medium=r["category_medium"],
+            category_small=r["category_small"],
             calories=float(r["calories"] or 0),
             protein=float(r["protein"] or 0),
             fat=float(r["fat"] or 0),
@@ -149,6 +162,7 @@ async def get_food(food_id: int):
         manufacturer=row["manufacturer"],
         category_large=row["category_large"],
         category_medium=row["category_medium"],
+        category_small=row["category_small"],
         calories=float(row["calories"] or 0),
         protein=float(row["protein"] or 0),
         fat=float(row["fat"] or 0),
@@ -165,54 +179,63 @@ async def scan_food(
     food_id: int,
     calorie_goal: int = Query(2000),
     protein_goal: int = Query(60),
-    sugar_limit: int = Query(50)
+    sugar_limit: int = Query(50),
+    goal_type: str = Query("maintain", description="bulk, diet, diabetes, maintain")
 ):
-    """음식 스캔 - % 계산 + 판정"""
+    """
+    STOPPER 핵심 기능: 현실 기준 식품 스캔
+
+    - effective_protein: 마케팅 숫자 무력화, 실제 섭취 가능량 기준
+    - meal_type 기반 자동 분류
+    - 현실 기준 메시지 시스템
+    """
     row = await fetch_one("SELECT * FROM foods WHERE id = $1", food_id)
     if not row:
         raise HTTPException(404, "Food not found")
 
+    # 원본 영양 정보
     calories = float(row["calories"] or 0)
-    protein = float(row["protein"] or 0)
+    protein_raw = float(row["protein"] or 0)
     sugar = float(row["sugar"] or 0)
     sodium = float(row["sodium"] or 0)
 
-    # % 계산
+    # meal_type 자동 분류
+    category_small = row["category_small"] or ""
+    product_name = row["name"] or ""
+    meal_type = get_meal_type(category_small, product_name)
+
+    # 🔥 STOPPER 핵심: effective_protein (현실 기준)
+    protein_effective = effective_protein(protein_raw, meal_type)
+
+    # % 계산 (effective_protein 사용)
     cal_pct = round(calories / calorie_goal * 100) if calorie_goal > 0 else 0
-    pro_pct = round(protein / protein_goal * 100) if protein_goal > 0 else 0
+    pro_pct = round(protein_effective / protein_goal * 100) if protein_goal > 0 else 0
     sug_pct = round(sugar / sugar_limit * 100) if sugar_limit > 0 else 0
     sod_pct = round(sodium / 2000 * 100)  # 나트륨 기준 2000mg
 
-    # 상태 판정
-    def get_status(pct, reverse=False):
-        if reverse:  # 단백질: 높을수록 좋음
-            return "good" if pct >= 30 else "low"
-        if pct <= 25:
-            return "safe"
-        if pct <= 45:
-            return "ok"
-        if pct <= 70:
-            return "caution"
-        return "danger"
+    # STOPPER 메시지 시스템
+    protein_msg = get_protein_verdict(protein_effective, protein_goal, meal_type)
+    calorie_msg = get_calorie_verdict(calories, calorie_goal, meal_type)
+    sugar_msg = get_sugar_verdict(sugar, sugar_limit, meal_type)
 
-    status = {
-        "calories": get_status(cal_pct),
-        "protein": get_status(pro_pct, reverse=True),
-        "sugar": get_status(sug_pct),
-        "sodium": get_status(sod_pct)
-    }
-
-    # 판정 문구
-    verdict = generate_verdict(cal_pct, pro_pct, sug_pct, sod_pct, status)
+    overall = get_overall_verdict(
+        protein_msg["verdict"],
+        calorie_msg["verdict"],
+        sugar_msg["verdict"],
+        goal_type
+    )
 
     return {
         "food": {
             "id": row["id"],
             "name": row["name"],
             "manufacturer": row["manufacturer"],
+            "category_small": category_small,
+            "meal_type": meal_type,
             "serving_size": row["serving_size"],
             "calories": calories,
-            "protein": protein,
+            "protein_raw": protein_raw,  # 표기값
+            "protein_effective": protein_effective,  # 현실값 (STOPPER)
             "sugar": sugar,
             "sodium": sodium,
             "fat": float(row["fat"] or 0),
@@ -220,12 +243,216 @@ async def scan_food(
         },
         "percentages": {
             "calories": cal_pct,
-            "protein": pro_pct,
+            "protein": pro_pct,  # effective 기준
             "sugar": sug_pct,
             "sodium": sod_pct
         },
-        "status": status,
-        "verdict": verdict
+        "messages": {
+            "protein": protein_msg,
+            "calorie": calorie_msg,
+            "sugar": sugar_msg,
+            "overall": overall
+        },
+        "stopper_note": {
+            "protein_capped": protein_effective < protein_raw,
+            "protein_cap_reason": f"{meal_type} 타입은 현실 기준 {protein_effective}g까지 인정" if protein_effective < protein_raw else None
+        }
+    }
+
+
+@app.get("/api/barcode/{barcode}/scan")
+async def scan_barcode(
+    barcode: str,
+    calorie_goal: int = Query(2000),
+    protein_goal: int = Query(60),
+    sugar_limit: int = Query(50),
+    goal_type: str = Query("maintain", description="bulk, diet, diabetes, maintain")
+):
+    """
+    바코드 스캔 → STOPPER 분석
+
+    1. STOPPER DB에서 바코드 조회
+    2. 없으면 Open Food Facts에서 실시간 조회
+    3. OFF 제품을 STOPPER DB와 매칭
+    4. 매칭 성공시 바코드 자동 업데이트
+    5. STOPPER 분석 결과 반환
+    """
+
+    # 1. STOPPER DB에서 바코드 조회
+    row = await fetch_one("SELECT * FROM foods WHERE barcode = $1", barcode)
+
+    if row:
+        # 기존 제품 → 스캔 결과 반환
+        food_id = row["id"]
+
+        # 원본 영양 정보
+        calories = float(row["calories"] or 0)
+        protein_raw = float(row["protein"] or 0)
+        sugar = float(row["sugar"] or 0)
+        sodium = float(row["sodium"] or 0)
+
+        # meal_type 자동 분류
+        category_small = row["category_small"] or ""
+        product_name = row["name"] or ""
+        meal_type = get_meal_type(category_small, product_name)
+
+        # 🔥 STOPPER 핵심: effective_protein
+        protein_effective = effective_protein(protein_raw, meal_type)
+
+        # % 계산
+        cal_pct = round(calories / calorie_goal * 100) if calorie_goal > 0 else 0
+        pro_pct = round(protein_effective / protein_goal * 100) if protein_goal > 0 else 0
+        sug_pct = round(sugar / sugar_limit * 100) if sugar_limit > 0 else 0
+        sod_pct = round(sodium / 2000 * 100)
+
+        # STOPPER 메시지
+        protein_msg = get_protein_verdict(protein_effective, protein_goal, meal_type)
+        calorie_msg = get_calorie_verdict(calories, calorie_goal, meal_type)
+        sugar_msg = get_sugar_verdict(sugar, sugar_limit, meal_type)
+        overall = get_overall_verdict(
+            protein_msg["verdict"],
+            calorie_msg["verdict"],
+            sugar_msg["verdict"],
+            goal_type
+        )
+
+        return {
+            "source": "stopper_db",
+            "food": {
+                "id": row["id"],
+                "name": row["name"],
+                "manufacturer": row["manufacturer"],
+                "category_small": category_small,
+                "meal_type": meal_type,
+                "serving_size": row["serving_size"],
+                "barcode": barcode,
+                "calories": calories,
+                "protein_raw": protein_raw,
+                "protein_effective": protein_effective,
+                "sugar": sugar,
+                "sodium": sodium,
+                "fat": float(row["fat"] or 0),
+                "carbohydrate": float(row["carbohydrate"] or 0)
+            },
+            "percentages": {
+                "calories": cal_pct,
+                "protein": pro_pct,
+                "sugar": sug_pct,
+                "sodium": sod_pct
+            },
+            "messages": {
+                "protein": protein_msg,
+                "calorie": calorie_msg,
+                "sugar": sugar_msg,
+                "overall": overall
+            },
+            "stopper_note": {
+                "protein_capped": protein_effective < protein_raw,
+                "protein_cap_reason": f"{meal_type} 타입은 현실 기준 {protein_effective}g까지 인정" if protein_effective < protein_raw else None
+            }
+        }
+
+    # 2. Open Food Facts에서 조회
+    off_product = fetch_product_by_barcode(barcode)
+
+    if not off_product:
+        raise HTTPException(404, f"바코드 {barcode}를 찾을 수 없습니다")
+
+    # 3. STOPPER DB와 매칭 시도
+    stopper_foods = await fetch_all("SELECT id, name, manufacturer FROM foods LIMIT 1000")
+    match_result = match_product_name(off_product, stopper_foods)
+
+    if match_result and match_result['score'] >= 0.80:
+        # 매칭 성공 → 바코드 업데이트
+        matched_food = match_result['food']
+        await execute(
+            "UPDATE foods SET barcode = $1 WHERE id = $2",
+            barcode, matched_food['id']
+        )
+
+        # 매칭된 제품으로 스캔 (재귀)
+        row = await fetch_one("SELECT * FROM foods WHERE id = $1", matched_food['id'])
+
+        # (위와 동일한 스캔 로직 - 중복 제거 위해 함수화 필요하지만 일단 단순 복사)
+        calories = float(row["calories"] or 0)
+        protein_raw = float(row["protein"] or 0)
+        sugar = float(row["sugar"] or 0)
+        sodium = float(row["sodium"] or 0)
+
+        category_small = row["category_small"] or ""
+        product_name = row["name"] or ""
+        meal_type = get_meal_type(category_small, product_name)
+        protein_effective = effective_protein(protein_raw, meal_type)
+
+        cal_pct = round(calories / calorie_goal * 100) if calorie_goal > 0 else 0
+        pro_pct = round(protein_effective / protein_goal * 100) if protein_goal > 0 else 0
+        sug_pct = round(sugar / sugar_limit * 100) if sugar_limit > 0 else 0
+        sod_pct = round(sodium / 2000 * 100)
+
+        protein_msg = get_protein_verdict(protein_effective, protein_goal, meal_type)
+        calorie_msg = get_calorie_verdict(calories, calorie_goal, meal_type)
+        sugar_msg = get_sugar_verdict(sugar, sugar_limit, meal_type)
+        overall = get_overall_verdict(
+            protein_msg["verdict"],
+            calorie_msg["verdict"],
+            sugar_msg["verdict"],
+            goal_type
+        )
+
+        return {
+            "source": "matched",
+            "match_score": match_result['score'],
+            "food": {
+                "id": row["id"],
+                "name": row["name"],
+                "manufacturer": row["manufacturer"],
+                "category_small": category_small,
+                "meal_type": meal_type,
+                "serving_size": row["serving_size"],
+                "barcode": barcode,
+                "calories": calories,
+                "protein_raw": protein_raw,
+                "protein_effective": protein_effective,
+                "sugar": sugar,
+                "sodium": sodium,
+                "fat": float(row["fat"] or 0),
+                "carbohydrate": float(row["carbohydrate"] or 0)
+            },
+            "percentages": {
+                "calories": cal_pct,
+                "protein": pro_pct,
+                "sugar": sug_pct,
+                "sodium": sod_pct
+            },
+            "messages": {
+                "protein": protein_msg,
+                "calorie": calorie_msg,
+                "sugar": sugar_msg,
+                "overall": overall
+            },
+            "stopper_note": {
+                "protein_capped": protein_effective < protein_raw,
+                "protein_cap_reason": f"{meal_type} 타입은 현실 기준 {protein_effective}g까지 인정" if protein_effective < protein_raw else None
+            }
+        }
+
+    # 4. 매칭 실패 → Open Food Facts 데이터 그대로 반환
+    return {
+        "source": "openfoodfacts",
+        "food": {
+            "name": off_product['name'],
+            "manufacturer": off_product['brand'],
+            "barcode": barcode,
+            "calories": off_product['calories'],
+            "protein": off_product['protein'],
+            "fat": off_product['fat'],
+            "carbohydrate": off_product['carbohydrate'],
+            "sugar": off_product['sugar'],
+            "sodium": off_product['sodium'],
+            "serving_size": off_product['serving_size'],
+            "image_url": off_product.get('image_url'),
+        },
+        "note": "STOPPER DB에 없는 제품입니다. Open Food Facts 데이터를 표시합니다."
     }
 
 
@@ -271,6 +498,178 @@ async def get_categories():
         ORDER BY count DESC
     """)
     return {"categories": [{"name": r["category_large"], "count": r["count"]} for r in rows]}
+
+
+# ============== Recommendations ==============
+
+@app.get("/api/recommendations/categories")
+async def get_recommendation_categories():
+    """추천용 소분류 목록 (벤치마크 포함)"""
+    rows = await fetch_all("""
+        SELECT cb.category_small, cb.category_medium, cb.category_large,
+               cb.food_count,
+               ROUND(cb.avg_protein::numeric, 1) as avg_protein,
+               ROUND(cb.avg_sugar::numeric, 1) as avg_sugar,
+               ROUND(cb.avg_calories::numeric, 0) as avg_calories,
+               ROUND(cb.top25_protein_min::numeric, 1) as top25_protein_min
+        FROM category_benchmarks cb
+        WHERE cb.food_count >= 10
+        ORDER BY cb.food_count DESC
+        LIMIT 50
+    """)
+    return {
+        "categories": [
+            {
+                "name": r["category_small"],
+                "medium": r["category_medium"],
+                "large": r["category_large"],
+                "count": r["food_count"],
+                "avg": {
+                    "protein": float(r["avg_protein"] or 0),
+                    "sugar": float(r["avg_sugar"] or 0),
+                    "calories": float(r["avg_calories"] or 0)
+                },
+                "top25_protein": float(r["top25_protein_min"] or 0)
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.get("/api/recommendations/{category_small}")
+async def get_recommendations(
+    category_small: str,
+    goal: str = Query("bulk", description="목표: bulk, diet, diabetes, maintain"),
+    limit: int = Query(10, le=50),
+    convenience_only: bool = Query(True, description="편의점 간편식만 (도시락/김밥/샌드위치 등)")
+):
+    """카테고리 내 추천 제품 목록
+
+    - bulk: 단백질 높은 순
+    - diet: 칼로리 낮은 순 (단백질 유지)
+    - diabetes: 당류 낮은 순
+    - maintain: 균형 (칼로리 적당, 나트륨 낮음)
+    - convenience_only: 편의점/1인가구 간편식으로 필터링
+    """
+    # 벤치마크 조회
+    benchmark = await fetch_one("""
+        SELECT * FROM category_benchmarks WHERE category_small = $1
+    """, category_small)
+
+    if not benchmark:
+        raise HTTPException(404, "Category not found")
+
+    # 소분류별 1인분 기준 가져오기
+    serving_rule = get_serving_rule(category_small)
+    min_cal = serving_rule["min_cal"]
+    max_cal = serving_rule["max_cal"]
+    max_protein = serving_rule.get("max_protein", 60)  # 카테고리별 단백질 상한 (기본 60g)
+
+    # 1인분 필터 (소분류별 맞춤 칼로리 범위 + 단백질 이상치 제외)
+    # + 묶음 데이터 제외 (단백질 비율이 비정상적으로 높은 경우)
+    # + 카테고리별 단백질 상한 (빵류는 25g, 과자는 30g 등)
+    serving_filter = f"""
+        AND protein < {max_protein}
+        AND calories BETWEEN {min_cal} AND {max_cal}
+        AND sodium < 5000
+        AND (protein * 4.0 / NULLIF(calories, 0) * 100) < 55
+        AND (
+            name LIKE '%프로틴%' OR name LIKE '%단백질%' OR name LIKE '%protein%'
+            OR (protein * 4.0 / NULLIF(calories, 0) * 100) < 35
+        )
+    """
+
+    # 편의점 간편식 필터 (도시락, 김밥, 샌드위치 등)
+    if convenience_only:
+        convenience_filter = """
+            AND (
+                name LIKE '%도시락%' OR name LIKE '%김밥%' OR name LIKE '%삼각%'
+                OR name LIKE '%컵밥%' OR name LIKE '%샌드위치%' OR name LIKE '%샐러드%'
+                OR name LIKE '%볼%' OR name LIKE '%bowl%' OR name LIKE '%덮밥%'
+                OR name LIKE '%햄버거%' OR name LIKE '%버거%' OR name LIKE '%파스타%'
+            )
+        """
+    else:
+        convenience_filter = ""
+
+    # 목표별 정렬 및 필터
+    if goal == "bulk":
+        order_by = "protein DESC"
+        where_extra = ""
+    elif goal == "diet":
+        order_by = "calories ASC"
+        where_extra = "AND protein > 3"  # 최소 단백질 보장
+    elif goal == "diabetes":
+        order_by = "sugar ASC"
+        where_extra = ""
+    else:  # maintain
+        order_by = "sodium ASC"
+        where_extra = ""
+
+    # 제품 조회
+    rows = await fetch_all(f"""
+        SELECT id, name, manufacturer, category_small,
+               calories, protein, fat, carbohydrate, sugar, sodium, serving_size
+        FROM foods
+        WHERE category_small = $1 {serving_filter} {convenience_filter} {where_extra}
+        ORDER BY {order_by}
+        LIMIT $2
+    """, category_small, limit)
+
+    # 벤치마크 정보
+    benchmark_info = {
+        "category": category_small,
+        "total_products": benchmark["food_count"],
+        "avg_protein": float(benchmark["avg_protein"] or 0),
+        "avg_sugar": float(benchmark["avg_sugar"] or 0),
+        "avg_calories": float(benchmark["avg_calories"] or 0),
+        "top25_protein_min": float(benchmark["top25_protein_min"] or 0),
+        "top25_sugar_max": float(benchmark["top25_sugar_max"] or 0),
+        "serving_range": f"{min_cal}-{max_cal}kcal (1인분 기준)"
+    }
+
+    # 제품 목록
+    products = []
+    for r in rows:
+        # 벤치마크 대비 평가
+        protein_vs_avg = round((float(r["protein"] or 0) / float(benchmark["avg_protein"])) * 100 - 100) if benchmark["avg_protein"] else 0
+        sugar_vs_avg = round((float(r["sugar"] or 0) / float(benchmark["avg_sugar"])) * 100 - 100) if benchmark["avg_sugar"] else 0
+
+        products.append({
+            "id": r["id"],
+            "name": r["name"],
+            "manufacturer": r["manufacturer"],
+            "calories": float(r["calories"] or 0),
+            "protein": float(r["protein"] or 0),
+            "sugar": float(r["sugar"] or 0),
+            "sodium": float(r["sodium"] or 0),
+            "serving_size": r["serving_size"],
+            "vs_category": {
+                "protein": f"+{protein_vs_avg}%" if protein_vs_avg > 0 else f"{protein_vs_avg}%",
+                "sugar": f"+{sugar_vs_avg}%" if sugar_vs_avg > 0 else f"{sugar_vs_avg}%"
+            },
+            "is_top25_protein": float(r["protein"] or 0) >= float(benchmark["top25_protein_min"] or 0)
+        })
+
+    return {
+        "goal": goal,
+        "benchmark": benchmark_info,
+        "products": products,
+        "message": _get_recommendation_message(goal, benchmark_info)
+    }
+
+
+def _get_recommendation_message(goal: str, benchmark: dict) -> str:
+    """추천 메시지 생성"""
+    cat = benchmark["category"]
+    if goal == "bulk":
+        return f"💪 {cat} 중 단백질 TOP 제품이에요. 평균 {benchmark['avg_protein']}g 대비 더 높은 제품들!"
+    elif goal == "diet":
+        return f"🥗 {cat} 중 저칼로리 제품이에요. 평균 {benchmark['avg_calories']}kcal 이하!"
+    elif goal == "diabetes":
+        return f"🩺 {cat} 중 저당 제품이에요. 상위 25%는 {benchmark['top25_sugar_max']}g 이하!"
+    else:
+        return f"⚖️ {cat} 중 균형 잡힌 제품이에요."
 
 
 # ============== Daily Records ==============

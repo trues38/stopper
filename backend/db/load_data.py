@@ -11,7 +11,8 @@ DATABASE_URL = os.getenv(
     "postgresql://stopper:stopper2026@localhost:5432/stopper"
 )
 
-DATA_PATH = Path(__file__).parent.parent.parent / "data" / "가공식품_lite.csv"
+# xlsx 파일 (24만건 전체)
+DATA_PATH = Path(__file__).parent.parent.parent / "data" / "20251230_가공식품DB_244834건.xlsx"
 
 
 async def create_schema(conn):
@@ -24,12 +25,12 @@ async def create_schema(conn):
 
 
 async def load_foods(conn):
-    """가공식품 데이터 로드"""
+    """가공식품 데이터 로드 (xlsx 24만건)"""
     print(f"Loading data from: {DATA_PATH}")
 
-    # CSV 읽기
-    df = pd.read_csv(DATA_PATH, encoding='utf-8-sig')
-    print(f"Total rows: {len(df)}")
+    # xlsx 읽기
+    df = pd.read_excel(DATA_PATH)
+    print(f"Total rows: {len(df):,}")
 
     # 컬럼 매핑
     df = df.rename(columns={
@@ -37,6 +38,7 @@ async def load_foods(conn):
         '식품명': 'name',
         '식품대분류명': 'category_large',
         '식품중분류명': 'category_medium',
+        '식품소분류명': 'category_small',
         '에너지(kcal)': 'calories',
         '단백질(g)': 'protein',
         '지방(g)': 'fat',
@@ -60,6 +62,7 @@ async def load_foods(conn):
         'manufacturer': '',
         'category_large': '',
         'category_medium': '',
+        'category_small': '',
         'serving_size': ''
     })
 
@@ -76,11 +79,12 @@ async def load_foods(conn):
         # 데이터 준비
         records = [
             (
-                row['food_code'],
-                row['name'],
-                row['manufacturer'],
-                row['category_large'],
-                row['category_medium'],
+                str(row['food_code']),
+                str(row['name']),
+                str(row['manufacturer']),
+                str(row['category_large']),
+                str(row['category_medium']),
+                str(row['category_small']),
                 float(row['calories']),
                 float(row['protein']),
                 float(row['fat']),
@@ -88,7 +92,7 @@ async def load_foods(conn):
                 float(row['sugar']),
                 float(row['sodium']),
                 float(row['saturated_fat']),
-                row['serving_size']
+                str(row['serving_size'])
             )
             for _, row in batch.iterrows()
         ]
@@ -97,18 +101,93 @@ async def load_foods(conn):
         await conn.executemany('''
             INSERT INTO foods (
                 food_code, name, manufacturer,
-                category_large, category_medium,
+                category_large, category_medium, category_small,
                 calories, protein, fat, carbohydrate,
                 sugar, sodium, saturated_fat, serving_size
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             ON CONFLICT (food_code) DO NOTHING
         ''', records)
 
-        print(f"  Loaded {min(i + batch_size, total)}/{total} ({(min(i + batch_size, total))*100//total}%)")
+        print(f"  Loaded {min(i + batch_size, total):,}/{total:,} ({(min(i + batch_size, total))*100//total}%)")
 
     # 최종 카운트
     count = await conn.fetchval("SELECT COUNT(*) FROM foods")
     print(f"✓ Foods loaded: {count:,} items")
+
+
+async def calculate_benchmarks(conn):
+    """카테고리별 벤치마크 계산"""
+    print("Calculating category benchmarks...")
+
+    # 소분류별 통계 계산
+    await conn.execute('''
+        INSERT INTO category_benchmarks (
+            category_small, category_medium, category_large, food_count,
+            avg_calories, avg_protein, avg_sugar, avg_sodium,
+            top25_protein_min, top25_sugar_max, top25_sodium_max
+        )
+        SELECT
+            category_small,
+            MAX(category_medium) as category_medium,
+            MAX(category_large) as category_large,
+            COUNT(*) as food_count,
+            AVG(calories) as avg_calories,
+            AVG(protein) as avg_protein,
+            AVG(sugar) as avg_sugar,
+            AVG(sodium) as avg_sodium,
+            PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY protein) as top25_protein_min,
+            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY sugar) as top25_sugar_max,
+            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY sodium) as top25_sodium_max
+        FROM foods
+        WHERE category_small IS NOT NULL AND category_small != ''
+        GROUP BY category_small
+        ON CONFLICT (category_small) DO UPDATE SET
+            food_count = EXCLUDED.food_count,
+            avg_calories = EXCLUDED.avg_calories,
+            avg_protein = EXCLUDED.avg_protein,
+            avg_sugar = EXCLUDED.avg_sugar,
+            avg_sodium = EXCLUDED.avg_sodium,
+            top25_protein_min = EXCLUDED.top25_protein_min,
+            top25_sugar_max = EXCLUDED.top25_sugar_max,
+            top25_sodium_max = EXCLUDED.top25_sodium_max,
+            updated_at = NOW()
+    ''')
+
+    # 최고 단백질 제품 업데이트
+    await conn.execute('''
+        UPDATE category_benchmarks cb
+        SET best_protein_food_id = (
+            SELECT id FROM foods f
+            WHERE f.category_small = cb.category_small
+            ORDER BY f.protein DESC
+            LIMIT 1
+        )
+    ''')
+
+    # 최저 당류 제품 업데이트
+    await conn.execute('''
+        UPDATE category_benchmarks cb
+        SET best_lowsugar_food_id = (
+            SELECT id FROM foods f
+            WHERE f.category_small = cb.category_small AND f.sugar >= 0
+            ORDER BY f.sugar ASC
+            LIMIT 1
+        )
+    ''')
+
+    # 최저 나트륨 제품 업데이트
+    await conn.execute('''
+        UPDATE category_benchmarks cb
+        SET best_lowsodium_food_id = (
+            SELECT id FROM foods f
+            WHERE f.category_small = cb.category_small AND f.sodium >= 0
+            ORDER BY f.sodium ASC
+            LIMIT 1
+        )
+    ''')
+
+    count = await conn.fetchval("SELECT COUNT(*) FROM category_benchmarks")
+    print(f"✓ Benchmarks calculated: {count} categories")
 
 
 async def load_seed_combinations(conn):
@@ -235,6 +314,7 @@ async def main():
     try:
         await create_schema(conn)
         await load_foods(conn)
+        await calculate_benchmarks(conn)
         await load_seed_combinations(conn)
 
         print("=" * 50)

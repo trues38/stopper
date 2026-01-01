@@ -76,12 +76,12 @@ export default function Result() {
     );
   }
 
-  const { food, percentages, status } = result;
+  const { food, percentages, messages, stopper_note } = result;
 
   // quantity에 따른 실제 값 계산
   const actualValues = {
     calories: Math.round(food.calories * quantity),
-    protein: Math.round(food.protein * quantity * 10) / 10,
+    protein: Math.round(food.protein_effective * quantity * 10) / 10,
     sugar: Math.round(food.sugar * quantity * 10) / 10,
     sodium: Math.round(food.sodium * quantity),
   };
@@ -118,11 +118,11 @@ export default function Result() {
       </header>
 
       <main className="max-w-lg mx-auto px-4 py-6">
-        {/* 판정 */}
+        {/* STOPPER 판정 */}
         <Verdict
-          percentages={actualPercentages}
-          status={actualStatuses}
-          goalType={settings.goalType}
+          messages={messages}
+          mealType={food.meal_type}
+          proteinCapped={stopper_note?.protein_capped}
         />
 
         {/* 수량 조절 */}
@@ -200,6 +200,20 @@ export default function Result() {
               <div className="flex justify-between">
                 <dt className="text-gray-500">1회 섭취량</dt>
                 <dd className="text-gray-900">{food.serving_size}</dd>
+              </div>
+            )}
+            {stopper_note?.protein_capped && (
+              <div className="flex justify-between items-start mt-3 pt-3 border-t">
+                <dt className="text-gray-500">단백질</dt>
+                <dd className="text-gray-900 text-right">
+                  <div className="flex items-center gap-2">
+                    <span className="line-through text-gray-400">{food.protein_raw}g</span>
+                    <span className="font-bold text-emerald-600">{food.protein_effective}g</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {stopper_note.protein_cap_reason}
+                  </p>
+                </dd>
               </div>
             )}
           </dl>

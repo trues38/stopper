@@ -43,6 +43,7 @@ export async function scanFood(id, settings) {
     calorie_goal: settings.calorieGoal.toString(),
     protein_goal: settings.proteinGoal.toString(),
     sugar_limit: settings.sugarLimit.toString(),
+    goal_type: settings.goalType || 'maintain',
   });
   const res = await fetch(`${API_BASE}/api/foods/${id}/scan?${params}`);
   if (!res.ok) throw new Error('스캔 실패');
@@ -125,5 +126,29 @@ export async function likeCombination(fingerprint, comboId) {
     headers: { 'X-Fingerprint': fingerprint },
   });
   if (!res.ok) throw new Error('좋아요 실패');
+  return res.json();
+}
+
+/**
+ * 추천용 카테고리 목록 조회 (벤치마크 포함)
+ */
+export async function getRecommendationCategories() {
+  const res = await fetch(`${API_BASE}/api/recommendations/categories`);
+  if (!res.ok) throw new Error('카테고리 조회 실패');
+  return res.json();
+}
+
+/**
+ * 카테고리별 추천 제품 조회
+ */
+export async function getRecommendations(categorySmall, options = {}) {
+  const { goal = 'bulk', limit = 10, convenience_only = true } = options;
+  const params = new URLSearchParams({
+    goal,
+    limit: limit.toString(),
+    convenience_only: convenience_only.toString(),
+  });
+  const res = await fetch(`${API_BASE}/api/recommendations/${encodeURIComponent(categorySmall)}?${params}`);
+  if (!res.ok) throw new Error('추천 제품 조회 실패');
   return res.json();
 }

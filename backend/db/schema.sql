@@ -6,8 +6,9 @@ CREATE TABLE IF NOT EXISTS foods (
     food_code VARCHAR(30) UNIQUE,
     name VARCHAR(300) NOT NULL,
     manufacturer VARCHAR(200),
-    category_large VARCHAR(100),
-    category_medium VARCHAR(100),
+    category_large VARCHAR(100),   -- 대분류 (24개)
+    category_medium VARCHAR(100),  -- 중분류 (89개)
+    category_small VARCHAR(100),   -- 소분류 (211개)
     calories DECIMAL(10,2) DEFAULT 0,
     protein DECIMAL(10,2) DEFAULT 0,
     fat DECIMAL(10,2) DEFAULT 0,
@@ -21,7 +22,9 @@ CREATE TABLE IF NOT EXISTS foods (
 
 -- 검색 인덱스
 CREATE INDEX IF NOT EXISTS idx_foods_name ON foods USING gin(to_tsvector('simple', name));
-CREATE INDEX IF NOT EXISTS idx_foods_category ON foods(category_large);
+CREATE INDEX IF NOT EXISTS idx_foods_category_large ON foods(category_large);
+CREATE INDEX IF NOT EXISTS idx_foods_category_medium ON foods(category_medium);
+CREATE INDEX IF NOT EXISTS idx_foods_category_small ON foods(category_small);
 CREATE INDEX IF NOT EXISTS idx_foods_protein ON foods(protein DESC);
 CREATE INDEX IF NOT EXISTS idx_foods_calories ON foods(calories);
 CREATE INDEX IF NOT EXISTS idx_foods_sugar ON foods(sugar);
@@ -106,3 +109,29 @@ CREATE TABLE IF NOT EXISTS likes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_likes_combination ON likes(combination_id);
+
+-- 6. 카테고리 벤치마크 테이블
+-- 소분류별 영양성분 통계 (추천용)
+CREATE TABLE IF NOT EXISTS category_benchmarks (
+    id SERIAL PRIMARY KEY,
+    category_small VARCHAR(100) UNIQUE NOT NULL,  -- 소분류명
+    category_medium VARCHAR(100),
+    category_large VARCHAR(100),
+    food_count INTEGER DEFAULT 0,
+    -- 평균값
+    avg_calories DECIMAL(10,2) DEFAULT 0,
+    avg_protein DECIMAL(10,2) DEFAULT 0,
+    avg_sugar DECIMAL(10,2) DEFAULT 0,
+    avg_sodium DECIMAL(10,2) DEFAULT 0,
+    -- 상위 25% (고단백/저당/저나트륨 기준)
+    top25_protein_min DECIMAL(10,2) DEFAULT 0,
+    top25_sugar_max DECIMAL(10,2) DEFAULT 0,
+    top25_sodium_max DECIMAL(10,2) DEFAULT 0,
+    -- 최상위 (TOP 1)
+    best_protein_food_id INTEGER,
+    best_lowsugar_food_id INTEGER,
+    best_lowsodium_food_id INTEGER,
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_benchmarks_category ON category_benchmarks(category_small);

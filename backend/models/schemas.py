@@ -12,6 +12,7 @@ class FoodBase(BaseModel):
     manufacturer: Optional[str] = None
     category_large: Optional[str] = None
     category_medium: Optional[str] = None
+    category_small: Optional[str] = None
     calories: float = 0
     protein: float = 0
     fat: float = 0

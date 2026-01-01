@@ -247,6 +247,10 @@ export default function Settings() {
             <span className="text-xl">🔍</span>
             <span className="text-xs">검색</span>
           </Link>
+          <Link to="/recommendations" className="flex flex-col items-center text-gray-400">
+            <span className="text-xl">⭐</span>
+            <span className="text-xs">추천</span>
+          </Link>
           <Link to="/combos" className="flex flex-col items-center text-gray-400">
             <span className="text-xl">📦</span>
             <span className="text-xs">조합</span>
