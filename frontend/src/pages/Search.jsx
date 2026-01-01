@@ -89,7 +89,15 @@ export default function Search() {
       }
     } catch (err) {
       console.error('바코드 스캔 실패:', err);
-      alert('바코드를 찾을 수 없습니다.');
+
+      // 바코드를 찾을 수 없는 경우 → 등록 화면으로
+      const confirmRegister = confirm(
+        '이 바코드는 등록되지 않은 제품입니다.\n직접 등록하시겠습니까?'
+      );
+
+      if (confirmRegister) {
+        navigate('/product-register', { state: { barcode } });
+      }
     } finally {
       setIsLoading(false);
     }

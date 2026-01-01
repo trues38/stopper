@@ -167,3 +167,27 @@ export async function getRecommendations(categorySmall, options = {}) {
   if (!res.ok) throw new Error('추천 제품 조회 실패');
   return res.json();
 }
+
+/**
+ * I2570 바코드 조회 (제품명 자동 입력용)
+ */
+export async function lookupBarcode(barcode) {
+  const res = await fetch(`${API_BASE}/api/barcode/${barcode}/lookup`);
+  if (!res.ok) throw new Error('바코드 조회 실패');
+  return res.json();
+}
+
+/**
+ * 바코드 제품 등록
+ */
+export async function registerProduct(data) {
+  const res = await fetch(`${API_BASE}/api/barcode/register`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('제품 등록 실패');
+  return res.json();
+}

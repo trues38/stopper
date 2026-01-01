@@ -25,12 +25,14 @@ from api.openfoodfacts import (
     fetch_product_by_barcode,
     match_product_name
 )
+from api.mfds import lookup_barcode_i2570
 from models.schemas import (
     FoodResponse, FoodSearchResponse,
     UserSettings, RecordCreate, RecordResponse, TodayResponse, DailyTotals,
     CombinationCreate, CombinationResponse, CombinationListResponse,
     ComboIntent, ComboResult, ComboSignals,
-    ScanResult
+    ScanResult,
+    BarcodeLookupResponse, ProductRegisterRequest, ProductRegisterResponse
 )
 from datetime import datetime
 import uuid
@@ -1059,6 +1061,94 @@ async def get_settings(x_fingerprint: str = Header(...)):
         protein_goal=row["protein_goal"],
         sugar_limit=row["sugar_limit"]
     )
+
+
+# ============== Barcode Registration ==============
+
+@app.get("/api/barcode/{barcode}/lookup", response_model=BarcodeLookupResponse)
+async def lookup_barcode(barcode: str):
+    """
+    I2570 API로 바코드 조회 (제품명 자동 입력용)
+
+    - 바코드로 I2570 검색
+    - 제품명, 제조사 정보 반환
+    - 등록 화면에서 자동으로 제품명 채우기
+    """
+    # I2570 API 조회
+    result = lookup_barcode_i2570(barcode)
+
+    if result:
+        return BarcodeLookupResponse(
+            barcode=barcode,
+            name=result['name'],
+            manufacturer=result['manufacturer'],
+            found=True
+        )
+    else:
+        return BarcodeLookupResponse(
+            barcode=barcode,
+            name=None,
+            manufacturer=None,
+            found=False
+        )
+
+
+@app.post("/api/barcode/register", response_model=ProductRegisterResponse)
+async def register_product(req: ProductRegisterRequest):
+    """
+    바코드 제품 등록
+
+    1. 바코드로 기존 제품 확인
+    2. 있으면 업데이트, 없으면 삽입
+    3. STOPPER DB에 저장
+    """
+    # 기존 제품 확인
+    existing = await fetch_one("SELECT id FROM foods WHERE barcode = $1", req.barcode)
+
+    if existing:
+        # 업데이트
+        await execute("""
+            UPDATE foods SET
+                name = $1,
+                manufacturer = $2,
+                category_small = $3,
+                serving_size = $4,
+                calories = $5,
+                protein = $6,
+                fat = $7,
+                carbohydrate = $8,
+                sugar = $9,
+                sodium = $10,
+                saturated_fat = $11
+            WHERE barcode = $12
+        """, req.name, req.manufacturer, req.category_small, req.serving_size,
+            req.calories, req.protein, req.fat, req.carbohydrate,
+            req.sugar, req.sodium, req.saturated_fat, req.barcode)
+
+        return ProductRegisterResponse(
+            id=existing['id'],
+            barcode=req.barcode,
+            name=req.name,
+            message="제품 정보가 업데이트되었습니다"
+        )
+    else:
+        # 새로 삽입
+        food_id = await fetch_val("""
+            INSERT INTO foods (
+                name, manufacturer, category_small, serving_size, barcode,
+                calories, protein, fat, carbohydrate, sugar, sodium, saturated_fat
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            RETURNING id
+        """, req.name, req.manufacturer, req.category_small, req.serving_size, req.barcode,
+            req.calories, req.protein, req.fat, req.carbohydrate,
+            req.sugar, req.sodium, req.saturated_fat)
+
+        return ProductRegisterResponse(
+            id=food_id,
+            barcode=req.barcode,
+            name=req.name,
+            message="새 제품이 등록되었습니다"
+        )
 
 
 if __name__ == "__main__":

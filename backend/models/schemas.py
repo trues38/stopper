@@ -155,3 +155,37 @@ class ScanResult(BaseModel):
     percentages: dict  # {"calories": 25, "protein": 15, "sugar": 6}
     verdict: str  # 판정 문구
     status: dict  # {"calories": "safe", "protein": "low", "sugar": "safe"}
+
+
+# ============== Barcode Registration ==============
+
+class BarcodeLookupResponse(BaseModel):
+    """I2570 바코드 조회 결과"""
+    barcode: str
+    name: Optional[str] = None
+    manufacturer: Optional[str] = None
+    found: bool  # I2570에서 발견되었는지
+
+
+class ProductRegisterRequest(BaseModel):
+    """바코드 제품 등록 요청"""
+    barcode: str
+    name: str
+    manufacturer: Optional[str] = None
+    category_small: Optional[str] = None
+    serving_size: Optional[str] = None
+    calories: float
+    protein: float
+    fat: float = 0
+    carbohydrate: float = 0
+    sugar: float = 0
+    sodium: float = 0
+    saturated_fat: float = 0
+
+
+class ProductRegisterResponse(BaseModel):
+    """바코드 제품 등록 응답"""
+    id: int
+    barcode: str
+    name: str
+    message: str

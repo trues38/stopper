@@ -10,6 +10,7 @@ import Onboarding from './pages/Onboarding';
 import Dashboard from './pages/Dashboard';
 import Search from './pages/Search';
 import Result from './pages/Result';
+import ProductRegister from './pages/ProductRegister';
 import Recommendations from './pages/Recommendations';
 import Combinations from './pages/Combinations';
 import Settings from './pages/Settings';
@@ -54,6 +55,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <Result />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/product-register"
+          element={
+            <ProtectedRoute>
+              <ProductRegister />
             </ProtectedRoute>
           }
         />
