@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard';
 import Search from './pages/Search';
 import Result from './pages/Result';
 import Combinations from './pages/Combinations';
+import Settings from './pages/Settings';
 
 // 보호된 라우트 (온보딩 완료 필요)
 function ProtectedRoute({ children }) {
@@ -66,14 +67,12 @@ export default function App() {
           }
         />
 
-        {/* 설정 (v2) */}
+        {/* 설정 */}
         <Route
           path="/settings"
           element={
             <ProtectedRoute>
-              <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                <p className="text-gray-500">⚙️ 설정 기능 준비중...</p>
-              </div>
+              <Settings />
             </ProtectedRoute>
           }
         />
