@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: stopper-db
+    environment:
+      POSTGRES_USER: stopper
+      POSTGRES_PASSWORD: stopper2026
+      POSTGRES_DB: stopper
+    volumes:
+      - stopper_pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stopper"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: stopper-api
+    environment:
+      DATABASE_URL: postgresql://stopper:stopper2026@postgres:5432/stopper
+    ports:
+      - "8003:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  stopper_pgdata:
