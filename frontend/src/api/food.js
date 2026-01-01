@@ -8,10 +8,21 @@ const API_BASE = import.meta.env.DEV ? 'http://localhost:8003' : '';
 /**
  * 식품 검색
  */
-export async function searchFoods(query, limit = 20) {
+export async function searchFoods(query, options = {}) {
+  const { limit = 20, category = null } = options;
   const params = new URLSearchParams({ q: query, limit: limit.toString() });
+  if (category) params.append('category', category);
   const res = await fetch(`${API_BASE}/api/foods/search?${params}`);
   if (!res.ok) throw new Error('검색 실패');
+  return res.json();
+}
+
+/**
+ * 카테고리 목록 조회
+ */
+export async function getCategories() {
+  const res = await fetch(`${API_BASE}/api/categories`);
+  if (!res.ok) throw new Error('카테고리 조회 실패');
   return res.json();
 }
 

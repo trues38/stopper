@@ -101,9 +101,17 @@ export function FoodListItem({ food, percentages, status, onClick }) {
       {/* 정보 */}
       <div className="flex-1 min-w-0">
         <p className="font-medium text-gray-900 truncate">{food.name}</p>
-        <p className="text-xs text-gray-500">
-          {food.calories}kcal · 단 {percentages?.protein || 0}% · 당 {percentages?.sugar || 0}%
-        </p>
+        <div className="flex items-center gap-2 text-xs text-gray-500">
+          <span>{food.calories}kcal</span>
+          {food.category_medium && (
+            <>
+              <span>·</span>
+              <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-600">
+                {food.category_medium}
+              </span>
+            </>
+          )}
+        </div>
       </div>
 
       {/* 주요 % */}

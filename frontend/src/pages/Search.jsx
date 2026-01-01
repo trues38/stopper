@@ -1,10 +1,10 @@
 /**
  * Search 페이지 - 식품 검색
  */
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../store/useStore';
-import { searchFoods } from '../api/food';
+import { searchFoods, getCategories } from '../api/food';
 import { FoodListItem, FoodCardSkeleton } from '../components/FoodCard';
 import debounce from '../utils/debounce';
 
@@ -15,35 +15,56 @@ export default function Search() {
   const [results, setResults] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState(null);
+
+  // 카테고리 목록 로드
+  useEffect(() => {
+    getCategories()
+      .then(data => setCategories(data.categories || []))
+      .catch(console.error);
+  }, []);
+
+  // 검색 실행
+  const executeSearch = async (q, category) => {
+    if (q.length < 2) {
+      setResults([]);
+      setHasSearched(false);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const data = await searchFoods(q, { category, limit: 50 });
+      setResults(data.items || []);
+      setHasSearched(true);
+    } catch (err) {
+      console.error('검색 실패:', err);
+      setResults([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // 검색 실행 (디바운스)
   const doSearch = useCallback(
-    debounce(async (q) => {
-      if (q.length < 2) {
-        setResults([]);
-        setHasSearched(false);
-        return;
-      }
-
-      setIsLoading(true);
-      try {
-        const data = await searchFoods(q);
-        setResults(data.items || []);
-        setHasSearched(true);
-      } catch (err) {
-        console.error('검색 실패:', err);
-        setResults([]);
-      } finally {
-        setIsLoading(false);
-      }
-    }, 300),
+    debounce((q, category) => executeSearch(q, category), 300),
     []
   );
+
+  // 카테고리 변경시 재검색
+  const handleCategoryChange = (cat) => {
+    const newCategory = selectedCategory === cat ? null : cat;
+    setSelectedCategory(newCategory);
+    if (query.length >= 2) {
+      executeSearch(query, newCategory);
+    }
+  };
 
   const handleInput = (e) => {
     const value = e.target.value;
     setQuery(value);
-    doSearch(value);
+    doSearch(value, selectedCategory);
   };
 
   const handleSelect = (food) => {
@@ -94,6 +115,7 @@ export default function Search() {
                     setQuery('');
                     setResults([]);
                     setHasSearched(false);
+                    setSelectedCategory(null);
                   }}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
                 >
@@ -103,6 +125,35 @@ export default function Search() {
             </div>
           </div>
         </div>
+
+        {/* 카테고리 필터 */}
+        {categories.length > 0 && (
+          <div className="mt-2 -mx-4 px-4 overflow-x-auto scrollbar-hide">
+            <div className="flex gap-2 pb-1" style={{ width: 'max-content' }}>
+              <button
+                onClick={() => handleCategoryChange(null)}
+                className={`px-3 py-1 rounded-full text-sm whitespace-nowrap transition-colors
+                  ${!selectedCategory
+                    ? 'bg-red-500 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              >
+                전체
+              </button>
+              {categories.slice(0, 10).map((cat) => (
+                <button
+                  key={cat.name}
+                  onClick={() => handleCategoryChange(cat.name)}
+                  className={`px-3 py-1 rounded-full text-sm whitespace-nowrap transition-colors
+                    ${selectedCategory === cat.name
+                      ? 'bg-red-500 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                >
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </header>
 
       <main className="max-w-lg mx-auto px-4 py-4">
@@ -168,7 +219,7 @@ export default function Search() {
                     key={word}
                     onClick={() => {
                       setQuery(word);
-                      doSearch(word);
+                      doSearch(word, selectedCategory);
                     }}
                     className="px-3 py-1.5 bg-white rounded-full text-sm text-gray-600
                               border border-gray-200 hover:border-red-300 hover:text-red-500
