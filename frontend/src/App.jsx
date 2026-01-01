@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard';
 import Search from './pages/Search';
 import Result from './pages/Result';
 import ProductRegister from './pages/ProductRegister';
+import ProductConfirm from './pages/ProductConfirm';
 import Recommendations from './pages/Recommendations';
 import Combinations from './pages/Combinations';
 import Settings from './pages/Settings';
@@ -63,6 +64,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <ProductRegister />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/product-confirm"
+          element={
+            <ProtectedRoute>
+              <ProductConfirm />
             </ProtectedRoute>
           }
         />

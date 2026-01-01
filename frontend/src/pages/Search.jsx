@@ -78,6 +78,7 @@ export default function Search() {
     setIsLoading(true);
 
     try {
+      // 1. STOPPER DB에서 바코드 조회
       const data = await scanBarcode(barcode, settings);
 
       // STOPPER DB에 있는 제품이면 ID로 이동
@@ -88,16 +89,10 @@ export default function Search() {
         navigate('/barcode-result', { state: { data, barcode } });
       }
     } catch (err) {
-      console.error('바코드 스캔 실패:', err);
+      console.error('STOPPER DB에 없음, 편의점 매칭 시도...');
 
-      // 바코드를 찾을 수 없는 경우 → 등록 화면으로
-      const confirmRegister = confirm(
-        '이 바코드는 등록되지 않은 제품입니다.\n직접 등록하시겠습니까?'
-      );
-
-      if (confirmRegister) {
-        navigate('/product-register', { state: { barcode } });
-      }
+      // 2. 편의점 DB 매칭 시도
+      navigate('/product-confirm', { state: { barcode } });
     } finally {
       setIsLoading(false);
     }

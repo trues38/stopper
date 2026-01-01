@@ -26,13 +26,15 @@ from api.openfoodfacts import (
     match_product_name
 )
 from api.mfds import lookup_barcode_i2570
+from api.convenience import match_convenience_product
 from models.schemas import (
     FoodResponse, FoodSearchResponse,
     UserSettings, RecordCreate, RecordResponse, TodayResponse, DailyTotals,
     CombinationCreate, CombinationResponse, CombinationListResponse,
     ComboIntent, ComboResult, ComboSignals,
     ScanResult,
-    BarcodeLookupResponse, ProductRegisterRequest, ProductRegisterResponse
+    BarcodeLookupResponse, ProductRegisterRequest, ProductRegisterResponse,
+    BarcodeMatchResponse, ConvenienceProduct
 )
 from datetime import datetime
 import uuid
@@ -1064,6 +1066,81 @@ async def get_settings(x_fingerprint: str = Header(...)):
 
 
 # ============== Barcode Registration ==============
+
+@app.get("/api/barcode/{barcode}/match", response_model=BarcodeMatchResponse)
+async def match_barcode(barcode: str):
+    """
+    바코드 → I2570 → 편의점 DB 매칭
+
+    1. I2570 API로 바코드 조회 → 제품명, 제조사
+    2. 편의점 DB에서 제품명으로 매칭
+    3. 매칭된 제품 정보 반환 (영양정보 포함)
+
+    사용자는 바코드 스캔만 하면 자동으로 제품 정보를 받음
+    """
+    # 1. I2570 API 조회
+    i2570_result = lookup_barcode_i2570(barcode)
+
+    if not i2570_result:
+        raise HTTPException(404, f"바코드 {barcode}를 I2570에서 찾을 수 없습니다")
+
+    i2570_name = i2570_result['name']
+    i2570_manufacturer = i2570_result['manufacturer']
+
+    # 2. 편의점 DB 매칭
+    cvs_product = match_convenience_product(i2570_name, i2570_manufacturer)
+
+    if not cvs_product:
+        return BarcodeMatchResponse(
+            barcode=barcode,
+            i2570_name=i2570_name,
+            i2570_manufacturer=i2570_manufacturer,
+            matched=False,
+            product=None
+        )
+
+    # 3. 매칭 성공
+    return BarcodeMatchResponse(
+        barcode=barcode,
+        i2570_name=i2570_name,
+        i2570_manufacturer=i2570_manufacturer,
+        matched=True,
+        product=ConvenienceProduct(**cvs_product)
+    )
+
+
+@app.post("/api/barcode/quick-register", response_model=ProductRegisterResponse)
+async def quick_register_barcode(barcode: str, product: ConvenienceProduct):
+    """
+    편의점 제품 원클릭 등록
+
+    - 편의점 DB의 영양정보를 그대로 STOPPER DB에 저장
+    - 사용자는 타이핑/입력 없이 확인만 누르면 됨
+    """
+    # 기존 제품 확인
+    existing = await fetch_one("SELECT id FROM foods WHERE barcode = $1", barcode)
+
+    if existing:
+        raise HTTPException(400, "이미 등록된 바코드입니다")
+
+    # 새로 삽입
+    food_id = await fetch_val("""
+        INSERT INTO foods (
+            name, manufacturer, serving_size, barcode,
+            calories, protein, fat, carbohydrate, sugar, sodium, saturated_fat
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING id
+    """, product.name, product.manufacturer, product.serving_size, barcode,
+        product.calories, product.protein, product.fat, product.carbohydrate,
+        product.sugar, product.sodium, product.saturated_fat)
+
+    return ProductRegisterResponse(
+        id=food_id,
+        barcode=barcode,
+        name=product.name,
+        message="편의점 제품이 등록되었습니다"
+    )
+
 
 @app.get("/api/barcode/{barcode}/lookup", response_model=BarcodeLookupResponse)
 async def lookup_barcode(barcode: str):

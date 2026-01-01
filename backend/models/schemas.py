@@ -189,3 +189,27 @@ class ProductRegisterResponse(BaseModel):
     barcode: str
     name: str
     message: str
+
+
+class ConvenienceProduct(BaseModel):
+    """편의점 제품 정보"""
+    name: str
+    price: Optional[str] = None
+    manufacturer: Optional[str] = None
+    serving_size: Optional[str] = None
+    calories: float
+    protein: float
+    fat: float = 0
+    carbohydrate: float = 0
+    sugar: float = 0
+    sodium: float = 0
+    saturated_fat: float = 0
+
+
+class BarcodeMatchResponse(BaseModel):
+    """바코드 매칭 결과"""
+    barcode: str
+    i2570_name: Optional[str] = None
+    i2570_manufacturer: Optional[str] = None
+    matched: bool
+    product: Optional[ConvenienceProduct] = None

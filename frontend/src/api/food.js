@@ -191,3 +191,27 @@ export async function registerProduct(data) {
   if (!res.ok) throw new Error('제품 등록 실패');
   return res.json();
 }
+
+/**
+ * 바코드 → I2570 → 편의점 DB 매칭
+ */
+export async function matchBarcode(barcode) {
+  const res = await fetch(`${API_BASE}/api/barcode/${barcode}/match`);
+  if (!res.ok) throw new Error('바코드 매칭 실패');
+  return res.json();
+}
+
+/**
+ * 편의점 제품 원클릭 등록
+ */
+export async function quickRegisterBarcode(barcode, product) {
+  const res = await fetch(`${API_BASE}/api/barcode/quick-register?barcode=${barcode}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(product),
+  });
+  if (!res.ok) throw new Error('제품 등록 실패');
+  return res.json();
+}
