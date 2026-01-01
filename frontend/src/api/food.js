@@ -51,6 +51,21 @@ export async function scanFood(id, settings) {
 }
 
 /**
+ * 바코드 스캔
+ */
+export async function scanBarcode(barcode, settings) {
+  const params = new URLSearchParams({
+    calorie_goal: settings.calorieGoal.toString(),
+    protein_goal: settings.proteinGoal.toString(),
+    sugar_limit: settings.sugarLimit.toString(),
+    goal_type: settings.goalType || 'maintain',
+  });
+  const res = await fetch(`${API_BASE}/api/barcode/${barcode}/scan?${params}`);
+  if (!res.ok) throw new Error('바코드 스캔 실패');
+  return res.json();
+}
+
+/**
  * 오늘의 기록 조회
  */
 export async function getTodayRecords(fingerprint) {

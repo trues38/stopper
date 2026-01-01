@@ -4,8 +4,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../store/useStore';
-import { searchFoods, getCategories } from '../api/food';
+import { searchFoods, getCategories, scanBarcode } from '../api/food';
 import { FoodListItem, FoodCardSkeleton } from '../components/FoodCard';
+import BarcodeScanner from '../components/BarcodeScanner';
 import debounce from '../utils/debounce';
 
 export default function Search() {
@@ -17,6 +18,7 @@ export default function Search() {
   const [hasSearched, setHasSearched] = useState(false);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
 
   // 카테고리 목록 로드
   useEffect(() => {
@@ -71,6 +73,28 @@ export default function Search() {
     navigate(`/result/${food.id}`);
   };
 
+  const handleBarcodeScan = async (barcode) => {
+    setShowBarcodeScanner(false);
+    setIsLoading(true);
+
+    try {
+      const data = await scanBarcode(barcode, settings);
+
+      // STOPPER DB에 있는 제품이면 ID로 이동
+      if (data.source === 'stopper_db' || data.source === 'matched') {
+        navigate(`/result/${data.food.id}`);
+      } else {
+        // Open Food Facts 제품은 바코드 결과 페이지로
+        navigate('/barcode-result', { state: { data, barcode } });
+      }
+    } catch (err) {
+      console.error('바코드 스캔 실패:', err);
+      alert('바코드를 찾을 수 없습니다.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // % 계산
   const calculatePercentages = (food) => ({
     calories: getPercentage('calories', food.calories),
@@ -123,6 +147,14 @@ export default function Search() {
                 </button>
               )}
             </div>
+            <button
+              onClick={() => setShowBarcodeScanner(true)}
+              className="p-3 bg-red-500 text-white rounded-xl hover:bg-red-600
+                        transition-colors text-xl"
+              title="바코드 스캔"
+            >
+              📷
+            </button>
           </div>
         </div>
 
@@ -233,6 +265,14 @@ export default function Search() {
           </div>
         )}
       </main>
+
+      {/* 바코드 스캐너 모달 */}
+      {showBarcodeScanner && (
+        <BarcodeScanner
+          onScan={handleBarcodeScan}
+          onClose={() => setShowBarcodeScanner(false)}
+        />
+      )}
     </div>
   );
 }
