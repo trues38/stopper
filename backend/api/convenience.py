@@ -76,6 +76,21 @@ def normalize_product_name(name: str) -> str:
     return normalized
 
 
+def extract_keywords(name: str) -> set:
+    """제품명에서 핵심 키워드 추출"""
+    import re
+
+    normalized = normalize_product_name(name)
+
+    # 한글 단어 추출 (2글자 이상)
+    korean_words = re.findall(r'[가-힣]{2,}', normalized)
+
+    # 영어 단어 추출
+    english_words = re.findall(r'[a-z]{2,}', normalized)
+
+    return set(korean_words + english_words)
+
+
 def match_convenience_product(i2570_name: str, manufacturer: str = None) -> Optional[Dict]:
     """
     I2570 제품명으로 편의점 DB 매칭
@@ -94,6 +109,7 @@ def match_convenience_product(i2570_name: str, manufacturer: str = None) -> Opti
 
     # I2570 제품명 정규화
     i2570_norm = normalize_product_name(i2570_name)
+    i2570_keywords = extract_keywords(i2570_name)
 
     # 1차: 정확한 이름 매칭
     for product in products:
@@ -103,21 +119,43 @@ def match_convenience_product(i2570_name: str, manufacturer: str = None) -> Opti
         if i2570_norm in cvs_norm or cvs_norm in i2570_norm:
             return product
 
-    # 2차: 제조사 + 키워드 매칭 (선택)
+    # 2차: 키워드 매칭 (제조사 무관, 핵심 단어만 매칭)
+    best_match = None
+    max_match_score = 0
+
+    for product in products:
+        cvs_name = product.get('name', '')
+        cvs_keywords = extract_keywords(cvs_name)
+
+        # 공통 키워드 수
+        common_keywords = i2570_keywords & cvs_keywords
+        match_score = len(common_keywords)
+
+        # 최소 2개 이상 키워드 일치
+        if match_score >= 2 and match_score > max_match_score:
+            max_match_score = match_score
+            best_match = product
+
+    if best_match:
+        return best_match
+
+    # 3차: 제조사 + 키워드 매칭
     if manufacturer:
         mfr_norm = normalize_product_name(manufacturer)
 
         for product in products:
             cvs_mfr = product.get('manufacturer', '')
+            if not cvs_mfr:
+                continue
+
             cvs_mfr_norm = normalize_product_name(cvs_mfr)
 
             # 제조사 일치 확인
             if mfr_norm in cvs_mfr_norm or cvs_mfr_norm in mfr_norm:
-                cvs_name = product.get('name', '')
-                cvs_norm = normalize_product_name(cvs_name)
+                cvs_keywords = extract_keywords(product.get('name', ''))
+                common = i2570_keywords & cvs_keywords
 
-                # 제품명 일부 일치
-                if i2570_norm in cvs_norm or cvs_norm in i2570_norm:
+                if len(common) >= 1:
                     return product
 
     return None
