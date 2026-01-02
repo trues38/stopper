@@ -9,13 +9,19 @@ import time
 
 # 경로 설정
 DATA_FILE = Path("/Users/js/Documents/stopper/data/convenience_products.json")
-IMAGES_DIR = Path("/Users/js/Documents/stopper/data/convenience_images")
+IMAGES_DIR = Path("/Users/js/Documents/stopper/data/convenience_crawl/images")
 IMAGES_DIR.mkdir(exist_ok=True)
 
 
 def download_image(url, save_path):
     """이미지 다운로드"""
     try:
+        # Fix double slash in URL (cu.bgfretail.com// -> direct CDN URL)
+        if '//' in url[8:]:  # Skip protocol part (https://)
+            url = url.replace('cu.bgfretail.com//', '')
+            if not url.startswith('http'):
+                url = 'https://' + url
+
         if url.startswith('//'):
             url = 'https:' + url
 
@@ -28,7 +34,7 @@ def download_image(url, save_path):
                 f.write(response.content)
             return True
     except Exception as e:
-        print(f"   실패: {url[:50]}...")
+        print(f"   실패: {url[:50]}... - {e}")
     return False
 
 

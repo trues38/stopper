@@ -5,6 +5,7 @@ import json
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from typing import Optional
 from datetime import date
 
@@ -62,6 +63,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Static files for product images
+IMAGES_DIR = Path(__file__).parent.parent.parent / "data" / "convenience_crawl" / "images"
+if IMAGES_DIR.exists():
+    app.mount("/images", StaticFiles(directory=str(IMAGES_DIR)), name="images")
 
 
 # ============== Health ==============

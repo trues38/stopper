@@ -126,6 +126,20 @@ export default function ProductConfirm() {
           </div>
 
           <div className="p-4 space-y-4">
+            {/* 제품 이미지 */}
+            {product.image_file && (
+              <div className="flex justify-center bg-gray-50 rounded-lg p-4">
+                <img
+                  src={`${import.meta.env.VITE_API_URL}/images/${product.image_file}`}
+                  alt={product.name}
+                  className="max-h-48 object-contain rounded-lg shadow-sm"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                  }}
+                />
+              </div>
+            )}
+
             {/* 제품명 */}
             <div>
               <p className="text-xs text-gray-500 mb-1">제품명</p>

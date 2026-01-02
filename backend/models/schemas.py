@@ -204,6 +204,7 @@ class ConvenienceProduct(BaseModel):
     sugar: Optional[float] = None
     sodium: Optional[float] = None
     saturated_fat: Optional[float] = None
+    image_file: Optional[str] = None  # Local image filename (e.g., "cu_0001.jpg")
 
 
 class BarcodeMatchResponse(BaseModel):
